@@ -25,36 +25,33 @@ PPL+XPL (B,64,64,6) ──► 1×1 Conv(6→3) ──► MobileNetV3-Small ─�
 pip install -r requirements.txt
 ```
 
-Or manually:
-```bash
-pip install tensorflow numpy pandas scikit-learn scipy openpyxl Pillow
-```
+Tested with Python 3.9–3.11. TensorFlow is pinned below 2.16 to keep the Keras 2 backend this code relies on.
 
 ## Data
 
 The dataset comprises 1,259 samples from seven wells in the Huoshiling Formation, Wangfu Fault Depression, Songliao Basin. Due to proprietary constraints, raw data are not publicly released. Please contact the corresponding author for data access requests.
 
-**Expected data format** (`master_dataset_v11_ideal.xlsx`):
+**Expected data format** (`synthetic_demo_data.xlsx`, and any real data file):
 
 | Column | Description |
 |---|---|
 | `Well` | Well identifier (WF1, CS12, CS13, CS601, CS607, CS608, CS606) |
 | `Depth` | Measured depth (m) |
-| `GR, AC, DEN, CN, RLA5` | Five conventional LWD curves |
+| `GR, AC, DEN, CNL, RLA5` | Five conventional well-log curves (used as LWD-equivalent inputs) |
 | `LithProb_*` | Lithology probability vector from pre-trained classifier |
-| `LogK_Ideal` | Core-measured permeability in log₁₀(mD) |
-| `Porosity_v6` | Well-log interpreted porosity |
+| `LogK_Core` | Core-measured permeability in log₁₀(mD) |
+| `Porosity_WL` | Well-log interpreted porosity (φ_WL) |
 
 **Thin-section images** (`thin_section_images/` directory):
 
 | File naming | Description |
 |---|---|
-| `{Well}_{Depth}_PPL.png` | Plane-polarized light image (1024×1024) |
-| `{Well}_{Depth}_XPL.png` | Cross-polarized light image (1024×1024) |
+| `{Well}_{Depth}_PPL.png` | Plane-polarized light image (1024×1024 for the real dataset) |
+| `{Well}_{Depth}_XPL.png` | Cross-polarized light image (1024×1024 for the real dataset) |
 
 Example: `CS12_2662.3_PPL.png`, `CS12_2662.3_XPL.png`
 
-Each PPL+XPL pair is center-cropped to 64×64 and concatenated into a 6-channel input.
+Each PPL+XPL pair is center-cropped to 64×64 at native resolution and concatenated into a 6-channel input.
 
 ## Quick Test (no data required)
 
@@ -64,7 +61,7 @@ To verify the full P-LCN pipeline using in-memory synthetic data:
 python quick_test.py
 ```
 
-**Expected output:** Training progress for 5 epochs followed by prediction metrics and `✅ ALL TESTS PASSED`.
+**Expected output:** Training progress for 5 epochs followed by prediction metrics and `ALL TESTS PASSED`.
 
 ## Code Validation with Synthetic Data
 
@@ -75,16 +72,16 @@ python generate_synthetic_data.py
 python train.py
 ```
 
-`generate_synthetic_data.py` creates a synthetic Excel file (`synthetic_demo_data.xlsx`) and paired PPL/XPL thin-section images (`thin_section_images/`) that mirror the structure of the real dataset. The code will run the full pipeline including KC-RANSAC filtering, model training (5 seeds), and uncertainty-calibrated evaluation.
+`generate_synthetic_data.py` creates a synthetic Excel file (`synthetic_demo_data.xlsx`) and paired PPL/XPL thin-section images (`thin_section_images/`) that mirror the structure of the real dataset. `train.py` reads `synthetic_demo_data.xlsx` by default and runs the full pipeline, including KC-RANSAC filtering, 5-seed training, and uncertainty-calibrated evaluation.
 
 **Note:** Metrics obtained from synthetic data will differ from those reported in the paper, which were obtained using the complete real dataset of 1,259 samples from seven wells in the Huoshiling Formation.
 
 ## Training with Real Data
 
-To reproduce the paper results, replace the data file path in `train.py`:
+To reproduce the paper results, set the data file path in `train.py`:
 
 ```python
-DATA_FILE = "your_real_data.xlsx"  # Replace with actual data file
+DATA_FILE = "your_real_data.xlsx"   # replace with your real data file
 ```
 
 ```bash
@@ -95,6 +92,8 @@ Results are reported as mean ± std across 5 random seeds with well-level data s
 - **Training**: WF1, CS12, CS13, CS601, CS607 (858 samples)
 - **Validation**: CS608 (143 samples)
 - **Blind test**: CS606 (258 samples, fully held out)
+
+Outputs: `results_summary.csv` (per-seed validation and blind metrics) and `results_blind_predictions.csv` (blind-well predictions averaged over the 5 seeds).
 
 ## Paper–Code Correspondence
 

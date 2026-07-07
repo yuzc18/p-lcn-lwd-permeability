@@ -4,7 +4,7 @@ Generate Synthetic Dataset for P-LCN Code Validation
 This script generates a synthetic dataset that mirrors the structure
 of the real dataset described in the paper. It creates:
   1. An Excel file with well-log data, lithology probabilities, and labels
-  2. Paired PPL/XPL thin-section images (64×64 pixels) for each sample
+  2. Paired PPL/XPL thin-section images for each sample
 
 The synthetic data allows reviewers to validate that the code runs
 correctly end-to-end. Metrics obtained from synthetic data will
@@ -18,9 +18,6 @@ Output:
     - synthetic_demo_data.xlsx
     - thin_section_images/{Well}_{Depth}_PPL.png
     - thin_section_images/{Well}_{Depth}_XPL.png
-
-Author: Xiu Jin, Taiji Yu
-Contact: yutj1988@126.com
 """
 
 import os
@@ -31,7 +28,8 @@ from PIL import Image
 SEED = 2025
 np.random.seed(SEED)
 
-# Well configuration matching paper Table 1
+# Well configuration for the synthetic demo. Sample counts are intentionally
+# small here for a fast, lightweight code-validation demo.
 WELL_CONFIG = {
     # Well:  (n_samples, depth_start, depth_end, role)
     "WF1":   (30, 3009.0, 3120.0, "Training"),
@@ -43,24 +41,27 @@ WELL_CONFIG = {
     "CS606": (40, 3000.0, 3200.0, "Blind Test"),
 }
 
-N_LITH_CLASSES = 18  # Paper: lithology probability vector
-IMAGE_SIZE = 64       # Paper: center-cropped to 64×64
+N_LITH_CLASSES = 18   # Paper: lithology probability vector
+IMAGE_SIZE = 64       # Demo images are generated at the crop size (64x64).
+#                       The real dataset uses 1024x1024 images that train.py
+#                       center-crops to 64x64; on these 64x64 demo images the
+#                       center crop is a no-op, which keeps the demo lightweight.
 OUTPUT_EXCEL = "synthetic_demo_data.xlsx"
 OUTPUT_IMAGE_DIR = "thin_section_images"
 
 
 def generate_synthetic_logs(n):
-    """Generate synthetic LWD log curves with realistic ranges."""
+    """Generate synthetic well-log curves with realistic ranges."""
     GR = np.random.uniform(20, 200, n)         # API
-    AC = np.random.uniform(180, 350, n)        # μs/m
-    DEN = np.random.uniform(2.1, 2.8, n)       # g/cm³
-    CN = np.random.uniform(2, 35, n)           # %
-    RLA5 = np.exp(np.random.uniform(1, 8, n))  # Ω·m (log-normal)
-    return GR, AC, DEN, CN, RLA5
+    AC = np.random.uniform(180, 350, n)        # us/m
+    DEN = np.random.uniform(2.1, 2.8, n)       # g/cm3
+    CNL = np.random.uniform(2, 35, n)          # %
+    RLA5 = np.exp(np.random.uniform(1, 8, n))  # Ohm*m (log-normal)
+    return GR, AC, DEN, CNL, RLA5
 
 
 def generate_synthetic_labels(n, phi_range=(0.01, 0.30)):
-    """Generate porosity and permeability with KC-like relationship."""
+    """Generate porosity and permeability with a KC-like relationship."""
     phi = np.random.uniform(phi_range[0], phi_range[1], n)
     # Noisy Kozeny-Carman: logK = a * log(phi) + b + noise
     logK = (3.0 * np.log10(np.clip(phi, 1e-6, None)) + 2.0
@@ -70,7 +71,7 @@ def generate_synthetic_labels(n, phi_range=(0.01, 0.30)):
 
 def generate_synthetic_image(size=IMAGE_SIZE):
     """
-    Generate a synthetic thin-section-like image (RGB, 64×64).
+    Generate a synthetic thin-section-like image (RGB).
     Simulates mineral grains, pores, and texture patterns.
     """
     img = np.zeros((size, size, 3), dtype=np.uint8)
@@ -116,7 +117,7 @@ def main():
         depths = np.round(depths, 1)
 
         # Generate log curves
-        GR, AC, DEN, CN, RLA5 = generate_synthetic_logs(n_samples)
+        GR, AC, DEN, CNL, RLA5 = generate_synthetic_logs(n_samples)
 
         # Generate labels
         phi, logK = generate_synthetic_labels(n_samples)
@@ -132,10 +133,10 @@ def main():
                 "GR": GR[i],
                 "AC": AC[i],
                 "DEN": DEN[i],
-                "CN": CN[i],
+                "CNL": CNL[i],
                 "RLA5": RLA5[i],
-                "Porosity_v6": phi[i],
-                "LogK_Ideal": logK[i],
+                "Porosity_WL": phi[i],
+                "LogK_Core": logK[i],
             }
 
             # Add lithology probabilities
@@ -164,7 +165,7 @@ def main():
     df.to_excel(OUTPUT_EXCEL, index=False, engine='openpyxl')
 
     print(f"\n{'=' * 60}")
-    print(f"  ✅ Synthetic dataset generated successfully")
+    print(f"  Synthetic dataset generated successfully")
     print(f"{'=' * 60}")
     print(f"  Excel: {OUTPUT_EXCEL} ({len(df)} samples)")
     print(f"  Images: {OUTPUT_IMAGE_DIR}/ ({total_images} files)")

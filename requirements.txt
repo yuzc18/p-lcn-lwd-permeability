@@ -1,5 +1,9 @@
-tensorflow>=2.12
-numpy>=1.23
+# Tested with Python 3.9-3.11
+# TensorFlow is pinned below 2.16 to keep the Keras 2 backend this code relies on
+# (Keras 3, the default from TF 2.16, changes subclassing/weight APIs).
+# NumPy is pinned below 2.0 for compatibility with TensorFlow 2.12-2.15.
+tensorflow>=2.12,<2.16
+numpy>=1.23,<2.0
 pandas>=1.5
 scikit-learn>=1.2
 scipy>=1.10

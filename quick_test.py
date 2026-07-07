@@ -11,11 +11,8 @@ Usage:
 Expected output:
     - KC-RANSAC filtering statistics
     - Training progress (5 epochs)
-    - Prediction metrics (R², RMSE, uncertainty correlation)
+    - Prediction metrics (R2, RMSE, uncertainty correlation)
     - All module checks passed
-
-Author: Xiu Jin, Taiji Yu
-Contact: yutj1988@126.com
 """
 
 import numpy as np
@@ -43,7 +40,7 @@ np.random.seed(SEED)
 def generate_synthetic_data(n_train=200, n_test=50, n_lith=3):
     """
     Generate synthetic volcanic reservoir data mimicking the real dataset
-    structure: LWD logs, thin-section images, lithology priors, porosity,
+    structure: well logs, thin-section images, lithology priors, porosity,
     and permeability with a Kozeny-Carman-like relationship.
     """
     print("=" * 60)
@@ -51,7 +48,7 @@ def generate_synthetic_data(n_train=200, n_test=50, n_lith=3):
     print("=" * 60)
 
     def make_subset(n):
-        # Simulate 5 LWD log curves (GR, AC, DEN, CN, RLA5)
+        # Simulate 5 well-log curves (GR, AC, DEN, CNL, RLA5)
         logs = np.random.randn(n, LOG_WINDOW_L, 5).astype(np.float32)
 
         # Simulate 6-channel PPL+XPL thin-section images (64x64)
@@ -104,9 +101,9 @@ def test_kc_ransac(phi, logK):
     if len(rejected_residuals) > 0:
         assert np.all(rejected_residuals < 0), \
             "FAIL: KC-RANSAC should only reject below-trend samples"
-        print("  ✓ Asymmetric filtering verified (only below-trend rejected)")
+        print("  [OK] Asymmetric filtering verified (only below-trend rejected)")
     else:
-        print("  ✓ No samples rejected (data is clean)")
+        print("  [OK] No samples rejected (data is clean)")
 
     return mask
 
@@ -132,7 +129,7 @@ def test_model_forward_pass(logs, imgs, lith):
     for key in expected_keys:
         assert key in outputs, f"FAIL: Missing output key '{key}'"
         assert outputs[key].shape[0] == 4, f"FAIL: Wrong batch dim for '{key}'"
-    print(f"  ✓ All {len(expected_keys)} output keys present")
+    print(f"  [OK] All {len(expected_keys)} output keys present")
 
     # Verify uncertainty is positive
     assert tf.reduce_all(outputs["sigma_total"] > 0), \
@@ -141,22 +138,22 @@ def test_model_forward_pass(logs, imgs, lith):
         "FAIL: sigma_log must be positive"
     assert tf.reduce_all(outputs["sigma_img"] > 0), \
         "FAIL: sigma_img must be positive"
-    print("  ✓ All uncertainty outputs are positive")
+    print("  [OK] All uncertainty outputs are positive")
 
     # Verify fusion weights sum to ~1
     w_sum = outputs["w_log"] + outputs["w_img"]
     assert tf.reduce_all(tf.abs(w_sum - 1.0) < 1e-4), \
         "FAIL: Fusion weights should sum to 1"
-    print("  ✓ Fusion weights sum to 1.0")
+    print("  [OK] Fusion weights sum to 1.0")
 
     # Verify phi_hat in [0, 1] (sigmoid output)
     assert tf.reduce_all(outputs["phi_hat"] >= 0) and \
            tf.reduce_all(outputs["phi_hat"] <= 1), \
         "FAIL: phi_hat should be in [0, 1]"
-    print("  ✓ Porosity prediction in valid range [0, 1]")
+    print("  [OK] Porosity prediction in valid range [0, 1]")
 
     n_params = model.count_params()
-    print(f"  ✓ Model parameters: {n_params:,}")
+    print(f"  [OK] Model parameters: {n_params:,}")
 
     return model
 
@@ -196,9 +193,9 @@ def test_training_loop(model, logs_tr, imgs_tr, lith_tr,
 
     # Verify loss is decreasing
     if losses[-1] < losses[0]:
-        print("  ✓ Loss is decreasing (model is learning)")
+        print("  [OK] Loss is decreasing (model is learning)")
     else:
-        print("  ⚠ Loss did not decrease (may need more epochs)")
+        print("  [WARN] Loss did not decrease (may need more epochs)")
 
     return trainer
 
@@ -211,7 +208,7 @@ def test_inference(trainer, logs_te, imgs_te, lith_te, logK_te, phi_te):
 
     results = trainer.evaluate(logs_te, imgs_te, lith_te, logK_te, phi_te)
 
-    print(f"  R²   = {results['R2']:.4f}")
+    print(f"  R2   = {results['R2']:.4f}")
     print(f"  RMSE = {results['RMSE']:.4f}")
     print(f"  MAE  = {results['MAE']:.4f}")
     print(f"  Uncertainty-Error Correlation = {results['Corr']:.4f}")
@@ -221,22 +218,22 @@ def test_inference(trainer, logs_te, imgs_te, lith_te, logK_te, phi_te):
     assert not np.any(np.isnan(results["mu"])), "FAIL: NaN in predictions"
     assert not np.any(np.isnan(results["sigma"])), "FAIL: NaN in uncertainty"
     assert np.all(results["sigma"] > 0), "FAIL: Uncertainty must be positive"
-    print("  ✓ No NaN values in outputs")
-    print("  ✓ All uncertainty values are positive")
+    print("  [OK] No NaN values in outputs")
+    print("  [OK] All uncertainty values are positive")
 
     # Verify fusion weight outputs
     assert np.all((results["w_log"] >= 0) & (results["w_log"] <= 1)), \
         "FAIL: w_log out of range"
     assert np.all((results["w_img"] >= 0) & (results["w_img"] <= 1)), \
         "FAIL: w_img out of range"
-    print("  ✓ Fusion weights in valid range [0, 1]")
+    print("  [OK] Fusion weights in valid range [0, 1]")
 
     return results
 
 
 def main():
     print("\n" + "#" * 60)
-    print("#  P-LCN Quick Test — Synthetic Data Validation")
+    print("#  P-LCN Quick Test -- Synthetic Data Validation")
     print("#" * 60)
 
     # Step 1: Generate data
@@ -259,16 +256,16 @@ def main():
 
     # Summary
     print("\n" + "=" * 60)
-    print("  ✅ ALL TESTS PASSED — P-LCN pipeline is functional")
+    print("  ALL TESTS PASSED -- P-LCN pipeline is functional")
     print("=" * 60)
     print("  Modules verified:")
-    print("    • KC-RANSAC asymmetric label filtering")
-    print("    • Log Expert (1D-CNN + DSC + Lithology Gating)")
-    print("    • Image Expert (MobileNetV3-Small + 6ch adapter)")
-    print("    • IVW feature-level fusion")
-    print("    • Cascaded φ→K prediction head")
-    print("    • Masked heteroscedastic NLL training")
-    print("    • Uncertainty-aware inference")
+    print("    - KC-RANSAC asymmetric label filtering")
+    print("    - Log Expert (1D-CNN + DSC + Lithology Gating)")
+    print("    - Image Expert (MobileNetV3-Small + 6ch adapter)")
+    print("    - IVW feature-level fusion")
+    print("    - Cascaded phi->K prediction head")
+    print("    - Masked heteroscedastic NLL training")
+    print("    - Uncertainty-aware inference")
 
 
 if __name__ == "__main__":

@@ -2,10 +2,9 @@
 Physics-Informed Uncertainty-Aware Multimodal Fusion for
 Logging-While-Drilling Permeability Evaluation in Volcanic Reservoirs
 
-Implementation of P-LCN (Physics-Informed Lightweight Cascaded Network)
+Implementation of P-LCN (Physics-Informed Lightweight Cascaded Network).
 
-Author: Xiu Jin, Taiji Yu
-Contact: yutj1988@126.com
+Reference implementation accompanying the manuscript (under review).
 """
 
 import os
@@ -26,8 +25,8 @@ RANDOM_SEED = 2025
 tf.keras.utils.set_random_seed(RANDOM_SEED)
 
 # --- Data columns ---
-K_COL = "LogK_Ideal"           # log10(K) permeability label
-PHI_COL = "Porosity_v6"        # Porosity (well-log interpreted)
+K_COL = "LogK_Core"            # log10(K) core-measured permeability label
+PHI_COL = "Porosity_WL"        # well-log interpreted porosity (phi_WL)
 WELL_COL = "Well"              # Well identifier column
 DEPTH_COL = "Depth"            # Depth column
 
@@ -37,8 +36,9 @@ VAL_WELL = "CS608"
 BLIND_WELL = "CS606"
 
 # --- Log Expert input (Paper: Log Expert with Lithology Gating) ---
-RAW_LOGS = ["GR", "AC", "DEN", "CN", "RLA5"]  # 5 conventional LWD curves
-LOG_WINDOW_L = 5  # Window length (~1m stratigraphic thickness)
+# Five conventional wireline curves, used as LWD-equivalent inputs (paper Sec. 2.2)
+RAW_LOGS = ["GR", "AC", "DEN", "CNL", "RLA5"]
+LOG_WINDOW_L = 5  # Window length (~1 m stratigraphic thickness)
 
 # --- Image Expert input (Paper: Image Expert) ---
 USE_RAW_IMAGES = True
@@ -61,12 +61,12 @@ BATCH_SIZE = 64
 MAX_EPOCHS = 200
 PATIENCE = 30
 INIT_LR = 2e-3
-LAMBDA_PHY = 1.0               # Paper: physics-consistency weight
-LAMBDA_L2 = 1e-4               # Paper: L2 regularization coefficient
+LAMBDA_PHY = 1.0               # physics-consistency weight (lambda_phy)
+LAMBDA_L2 = 1e-4               # L2 regularization coefficient (lambda_reg)
 LOG_EMB_DIM = 32               # Paper: 32-dimensional log feature embedding
 IMG_EMB_DIM = 32               # Paper: image embedding dimension
 
-DATA_FILE = "synthetic_demo_data.xlsx"  # Change to your data file for real experiments
+DATA_FILE = "synthetic_demo_data.xlsx"   # demo default; set to your real data file to reproduce paper results
 
 
 # ╔══════════════════════════════════════════════════════════════╗
@@ -145,8 +145,8 @@ def kc_ransac_filter(phi, logK, tau=KC_TAU, n_iter=1000, sample_frac=0.5,
 
     n_rejected = int((1 - mask).sum())
     pct_rejected = 100.0 * n_rejected / n
-    print(f"  KC-RANSAC: trend logK = {best_a:.3f}·logφ + {best_b:.3f}")
-    print(f"  KC-RANSAC: σ_r = {sigma_r:.4f}, τ = {tau}")
+    print(f"  KC-RANSAC: trend logK = {best_a:.3f}*logphi + {best_b:.3f}")
+    print(f"  KC-RANSAC: sigma_r = {sigma_r:.4f}, tau = {tau}")
     print(f"  KC-RANSAC: rejected {n_rejected}/{n} samples ({pct_rejected:.1f}%)")
 
     return mask, best_a, best_b, sigma_r
@@ -159,8 +159,8 @@ def kc_ransac_filter(phi, logK, tau=KC_TAU, n_iter=1000, sample_frac=0.5,
 
 def center_crop(img, crop_size=IMAGE_SIZE):
     """
-    Paper: "Each input image is center-cropped to focus on
-    representative micro-textural regions (64 × 64 pixels)."
+    Paper: "Each input image is center-cropped to 64 x 64 pixels at native
+    resolution" (no downsampling; the central region is retained as-is).
 
     Args:
         img: (H, W, 3) numpy array
@@ -253,9 +253,13 @@ def load_images_for_subset(df_subset, image_dir=IMAGE_DIR):
           f"({100*loaded_count/n:.1f}%)")
 
     if loaded_count < n:
-        missing = n - loaded_count
-        print(f"  ⚠️  {missing} images not found — "
-              f"these samples will use zero-filled placeholders")
+        missing_idx = np.where(~valid_mask)[0]
+        missing_keys = [(wells[j], depths[j]) for j in missing_idx]
+        raise FileNotFoundError(
+            f"{n - loaded_count} thin-section image pair(s) not found: "
+            f"{missing_keys}. Every depth sample must have both a PPL and an "
+            f"XPL image; zero-filled placeholders are not permitted in the "
+            f"reported metrics.")
 
     return images, valid_mask
 
@@ -275,7 +279,7 @@ def create_log_windows(log_values, window_size=LOG_WINDOW_L):
         window_size: L (number of sampling points spanning ~1m)
 
     Returns:
-        (N, L, n_curves) windowed array with zero-padding at boundaries
+        (N, L, n_curves) windowed array with edge padding at boundaries
     """
     n_samples, n_curves = log_values.shape
     half_w = window_size // 2
@@ -294,7 +298,7 @@ def load_and_split_by_well(data_file):
     Returns dict with train/val/blind data and KC-RANSAC mask.
     Loads raw PPL+XPL images when USE_RAW_IMAGES=True.
     """
-    print(f"📂 Loading data: {data_file}")
+    print(f"Loading data: {data_file}")
     if data_file.endswith('.csv'):
         df = pd.read_csv(data_file)
     else:
@@ -308,9 +312,6 @@ def load_and_split_by_well(data_file):
     print(f"  Log features: {RAW_LOGS}")
     print(f"  Lithology priors: {lith_cols}")
     print(f"  Image mode: {'Raw PPL+XPL (6-channel)' if USE_RAW_IMAGES else 'Pre-extracted features'}")
-
-    # --- Drop samples with missing well identifiers ---
-    df = df.dropna(subset=[WELL_COL])
 
     # --- Well-level split ---
     df_train = df[df[WELL_COL].isin(TRAIN_WELLS)].copy()
@@ -339,7 +340,7 @@ def load_and_split_by_well(data_file):
     if USE_RAW_IMAGES:
         # Paper: "paired PPL and XPL thin-section images (1024×1024),
         #         center-cropped to 64×64"
-        print(f"\n🖼️  Loading thin-section images from: {IMAGE_DIR}")
+        print(f"\nLoading thin-section images from: {IMAGE_DIR}")
         imgs_tr, _ = load_images_for_subset(df_train, IMAGE_DIR)
         imgs_va, _ = load_images_for_subset(df_val, IMAGE_DIR)
         imgs_bl, _ = load_images_for_subset(df_blind, IMAGE_DIR)
@@ -354,7 +355,7 @@ def load_and_split_by_well(data_file):
 
     # ── KC-RANSAC on training data ONLY (Paper: "estimated exclusively
     #    from the training wells and then fixed") ──
-    print("\n🔧 Applying KC-RANSAC label governance (training wells only)...")
+    print("\nApplying KC-RANSAC label governance (training wells only)...")
     kc_mask, kc_a, kc_b, kc_sigma = kc_ransac_filter(phi_tr, logK_tr, tau=KC_TAU)
 
     # ── Normalization: fit on training set ONLY (Paper: "All
@@ -459,21 +460,15 @@ class LogExpertWithGating(layers.Layer):
         self.dsc3 = DepthwiseSeparableConv1D(emb_dim, kernel_size=3, name="dsc_3")
         self.gap = layers.GlobalAveragePooling1D()
 
-        # Lithology gating (Eq.4) — will be built in build()
-        self.gate_dense = None
+        # Lithology gating (Eq.4)
+        self.gate_dense = None  # built dynamically on first call
 
         # Uncertainty head: σ_log (aleatoric)
         self.sigma_head = layers.Dense(1, name="sigma_log_raw")
 
     def build(self, input_shape):
-        # input_shape is a list: [log_shape, lith_shape]
-        if isinstance(input_shape, list):
-            lith_shape = input_shape[1]
-        else:
-            lith_shape = input_shape
         # Gate projection: W_g maps lith_dim → emb_dim
-        self.gate_dense = layers.Dense(self.emb_dim, name="gate_proj")
-        self.gate_dense.build(lith_shape)
+        # Will be built on first call
         super().build(input_shape)
 
     def call(self, inputs, training=False):
@@ -486,6 +481,8 @@ class LogExpertWithGating(layers.Layer):
         h_log = self.gap(h)  # (B, emb_dim=32)
 
         # Lithology gating (Eq.4): g = σ(W_g · P_litho + b_g)
+        if self.gate_dense is None:
+            self.gate_dense = layers.Dense(self.emb_dim, name="gate_proj")
         gate = tf.nn.sigmoid(self.gate_dense(lith_input))  # (B, 32)
         h_log_gated = h_log * gate  # element-wise (Eq.4: g ⊙ h_log)
 
@@ -496,9 +493,8 @@ class LogExpertWithGating(layers.Layer):
 
 
 # ── 3b. Image Expert ──────────────────────────────────────────
-# Paper: "MobileNetV3-Small as the backbone, truncated at 3rd
-#         bottleneck layer"
-# Input: PPL(3ch) + XPL(3ch) = 6-channel, center-cropped to 64×64
+# Paper: "a truncated MobileNetV3-Small backbone"
+# Input: PPL(3ch) + XPL(3ch) = 6-channel, center-cropped to 64x64
 
 class ImageExpert(layers.Layer):
     """
@@ -507,7 +503,7 @@ class ImageExpert(layers.Layer):
     When USE_RAW_IMAGES=True:
         - Accepts (B, 64, 64, 6) PPL+XPL concatenated input
         - 1×1 Conv2D adapter: 6ch → 3ch (learnable channel projection)
-        - MobileNetV3-Small backbone truncated at 3rd bottleneck
+        - Truncated MobileNetV3-Small backbone (lightweight subset)
         - GlobalAveragePooling2D → Dense → 32-dim embedding
 
     When USE_RAW_IMAGES=False:
@@ -528,17 +524,17 @@ class ImageExpert(layers.Layer):
                 3, kernel_size=1, padding='same', use_bias=False,
                 name="channel_adapter_6to3")
 
-            # MobileNetV3-Small backbone (Paper: "truncated at 3rd bottleneck")
+            # Truncated MobileNetV3-Small backbone
+            # (Paper: "a truncated MobileNetV3-Small backbone")
             base = tf.keras.applications.MobileNetV3Small(
                 input_shape=(IMAGE_SIZE, IMAGE_SIZE, 3),
                 include_top=False,
                 weights='imagenet',
                 minimalistic=True)
 
-            # Identify 3rd bottleneck output layer
-            # MobileNetV3Small structure: initial conv → bottleneck blocks
-            # We truncate after the 3rd inverted residual block
-            target_layer_name = self._find_3rd_bottleneck(base)
+            # Select the truncation point for the lightweight backbone and
+            # print the resolved layer for full transparency/reproducibility.
+            target_layer_name = self._select_truncation_layer(base)
             truncated_output = base.get_layer(target_layer_name).output
             self.backbone = Model(
                 inputs=base.input,
@@ -558,27 +554,25 @@ class ImageExpert(layers.Layer):
         self.sigma_head = layers.Dense(1, name="sigma_img_raw")
 
     @staticmethod
-    def _find_3rd_bottleneck(base_model):
-        """Find the output layer name of the 3rd bottleneck block."""
-        # MobileNetV3Small bottleneck blocks end with 'expand_bn' or
-        # 'project_bn' activation. We look for the 3rd such block.
+    def _select_truncation_layer(base_model):
+        """Resolve and print the layer at which the backbone is truncated."""
+        # MobileNetV3-Small inverted-residual blocks are delimited by the
+        # squeeze-excite 'multiply' endpoints; we truncate after the third.
         block_count = 0
         target_name = None
         for layer in base_model.layers:
             name = layer.name
-            # Each inverted residual block ends with a 're_lu' or
-            # 'activation' after the project BN
             if 'multiply' in name:  # SE block endpoint = block boundary
                 block_count += 1
                 if block_count == 3:
                     target_name = name
                     break
-        # Fallback: use a layer around index 40 if pattern matching fails
+        # Fallback if the SE pattern is unavailable (e.g. minimalistic=True)
         if target_name is None:
-            target_name = base_model.layers[min(40, len(base_model.layers)-1)].name
-            print(f"  ⚠️  3rd bottleneck auto-detection fallback → {target_name}")
+            target_name = base_model.layers[min(40, len(base_model.layers) - 1)].name
+            print(f"  Backbone truncated at fallback layer: {target_name}")
         else:
-            print(f"  MobileNetV3 truncated at: {target_name} (block {block_count})")
+            print(f"  Backbone truncated at: {target_name} (block {block_count})")
         return target_name
 
     def call(self, x, training=False):
@@ -885,7 +879,7 @@ def run_training(data, seed=RANDOM_SEED):
     best_weights = None
     patience_counter = 0
 
-    print(f"\n🚀 Training (seed={seed})...")
+    print(f"\nTraining (seed={seed})...")
     for epoch in range(MAX_EPOCHS):
         epoch_losses = []
         for batch in dataset:
@@ -916,7 +910,7 @@ def run_training(data, seed=RANDOM_SEED):
                   f"patience={patience_counter}/{PATIENCE}")
 
         if patience_counter >= PATIENCE:
-            print(f"  ⏹ Early stopping at epoch {epoch+1}")
+            print(f"  Early stopping at epoch {epoch+1}")
             break
 
     # Restore best weights
@@ -960,17 +954,17 @@ def main():
             data["blind"]["phi"])
         blind_metrics.append(blind_result)
 
-        print(f"\n  📋 Validation (CS608): R²={val_result['R2']:.4f}  "
+        print(f"\n  Validation (CS608): R2={val_result['R2']:.4f}  "
               f"RMSE={val_result['RMSE']:.4f}  MAE={val_result['MAE']:.4f}")
-        print(f"  📋 Blind     (CS606): R²={blind_result['R2']:.4f}  "
+        print(f"  Blind      (CS606): R2={blind_result['R2']:.4f}  "
               f"RMSE={blind_result['RMSE']:.4f}  MAE={blind_result['MAE']:.4f}")
-        print(f"  📋 Uncertainty: Corr={blind_result['Corr']:.3f}  "
+        print(f"  Uncertainty: Corr={blind_result['Corr']:.3f}  "
               f"95%PI Coverage={blind_result['Coverage_95PI']:.3f}")
 
     # ── Summary statistics (Paper: "mean ± standard deviation") ──
-    print("\n" + "="*60)
-    print("  FINAL RESULTS (Mean ± Std across 5 seeds)")
-    print("="*60)
+    print("\n" + "=" * 60)
+    print("  FINAL RESULTS (Mean +/- Std across 5 seeds)")
+    print("=" * 60)
 
     for name, metrics in [("Validation (CS608)", val_metrics),
                            ("Blind Test (CS606)", blind_metrics)]:
@@ -981,26 +975,37 @@ def main():
         covs = [m["Coverage_95PI"] for m in metrics]
 
         print(f"\n  {name}:")
-        print(f"    R²   = {np.mean(r2s):.3f} ± {np.std(r2s):.3f}")
-        print(f"    RMSE = {np.mean(rmses):.3f} ± {np.std(rmses):.3f}")
-        print(f"    MAE  = {np.mean(maes):.3f} ± {np.std(maes):.3f}")
-        print(f"    Corr = {np.mean(corrs):.3f} ± {np.std(corrs):.3f}")
+        print(f"    R2   = {np.mean(r2s):.3f} +/- {np.std(r2s):.3f}")
+        print(f"    RMSE = {np.mean(rmses):.3f} +/- {np.std(rmses):.3f}")
+        print(f"    MAE  = {np.mean(maes):.3f} +/- {np.std(maes):.3f}")
+        print(f"    Corr = {np.mean(corrs):.3f} +/- {np.std(corrs):.3f}")
         print(f"    95%PI Coverage = {np.mean(covs):.3f}")
 
-    # Save blind-well results from best seed
-    best_idx = int(np.argmax([m["R2"] for m in blind_metrics]))
-    best = blind_metrics[best_idx]
-    res_df = pd.DataFrame({
+    # ── Save per-seed metrics for all five seeds (no seed cherry-picking).
+    #    Blind-well figures in the paper are the 5-seed mean +/- std. ──
+    summary_rows = []
+    for i, seed in enumerate(seeds):
+        for split, m in [("validation", val_metrics[i]),
+                         ("blind", blind_metrics[i])]:
+            summary_rows.append({
+                "seed": seed, "split": split,
+                "R2": m["R2"], "RMSE": m["RMSE"], "MAE": m["MAE"],
+                "Corr": m["Corr"], "Coverage_95PI": m["Coverage_95PI"],
+            })
+    pd.DataFrame(summary_rows).to_csv("results_summary.csv", index=False)
+
+    # Blind-well predictions averaged across the five seeds (for reference/plots)
+    blind_mu = np.stack([m["mu"] for m in blind_metrics], axis=0)      # (5, N)
+    blind_sigma = np.stack([m["sigma"] for m in blind_metrics], axis=0)
+    pd.DataFrame({
         "Truth_logK": data["blind"]["logK"],
-        "Pred_logK": best["mu"],
-        "Sigma_total": best["sigma"],
-        "Sigma_log": best["sigma_log"],
-        "Sigma_img": best["sigma_img"],
-        "W_log": best["w_log"],
-        "W_img": best["w_img"],
-    })
-    res_df.to_csv("results_blind_well.csv", index=False)
-    print(f"\n✅ Blind-well results saved to results_blind_well.csv")
+        "Pred_logK_mean": blind_mu.mean(axis=0),
+        "Pred_logK_std": blind_mu.std(axis=0),
+        "Sigma_total_mean": blind_sigma.mean(axis=0),
+    }).to_csv("results_blind_predictions.csv", index=False)
+
+    print("\nSaved: results_summary.csv (per-seed metrics) and "
+          "results_blind_predictions.csv (5-seed mean predictions).")
 
 
 if __name__ == "__main__":

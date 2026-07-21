@@ -1,6 +1,6 @@
 """
-Physics-Informed Uncertainty-Aware Multimodal Fusion for
-Logging-While-Drilling Permeability Evaluation in Volcanic Reservoirs
+Conditional Cross-Scale Value of Cuttings Thin-Section Images for
+Wireline-Based Permeability Evaluation in Volcanic Reservoirs
 
 Implementation of P-LCN (Physics-Informed Lightweight Cascaded Network).
 
@@ -36,7 +36,7 @@ VAL_WELL = "CS608"
 BLIND_WELL = "CS606"
 
 # --- Log Expert input (Paper: Log Expert with Lithology Gating) ---
-# Five conventional wireline curves, used as LWD-equivalent inputs (paper Sec. 2.2)
+# Five conventional wireline curves (paper Sec. 2.2)
 RAW_LOGS = ["GR", "AC", "DEN", "CNL", "RLA5"]
 LOG_WINDOW_L = 5  # Window length (~1 m stratigraphic thickness)
 
@@ -66,7 +66,7 @@ LAMBDA_L2 = 1e-4               # L2 regularization coefficient (lambda_reg)
 LOG_EMB_DIM = 32               # Paper: 32-dimensional log feature embedding
 IMG_EMB_DIM = 32               # Paper: image embedding dimension
 
-DATA_FILE = "synthetic_demo_data.xlsx"   # demo default; set to your real data file to reproduce paper results
+DATA_FILE = "synthetic_demo_data.xlsx"   # demo default; real study data require authorized access
 
 
 # ╔══════════════════════════════════════════════════════════════╗
@@ -624,12 +624,12 @@ class IVWFeatureFusion(layers.Layer):
         return z_fused, w_log, w_img
 
 
-# ── 3d. Physics-Causal Cascaded Prediction Head ──────────────
+# ── 3d. Porosity-Guided Cascaded Prediction Head ─────────────
 # Paper Eq.7-9: z_fused → φ̂ → [z_fused; φ̂] → (μ_K, σ_total)
 
 class CascadedPredictionHead(layers.Layer):
     """
-    Paper: "Physics-Causal Cascaded Prediction Head"
+    Paper: "Porosity-Guided Cascaded Prediction Head"
 
     Eq.7: φ̂ = f_φ(z_fused)
     Eq.8: z_aug = [z_fused; φ̂]
@@ -671,7 +671,7 @@ class PLCN(Model):
     Full P-LCN model as described in Figure 4.
 
     Inputs:
-        logs_input: (B, L, 5)       — windowed LWD curves
+        logs_input: (B, L, 5)       — windowed wireline curves
         img_input: (B, 64, 64, 6)   — PPL+XPL 6-channel images
         lith_input: (B, n_litho)    — lithology probability vector
 

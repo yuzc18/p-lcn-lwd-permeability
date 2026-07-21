@@ -1,13 +1,15 @@
-# P-LCN: Physics-Informed Uncertainty-Aware Multimodal Fusion for LWD Permeability Evaluation
+# P-LCN: Conditional Cross-Scale Image Value for Wireline-Based Permeability Evaluation
 
 Official implementation of the paper:
 
-> **Physics-Informed Uncertainty-Aware Multimodal Fusion for Logging-While-Drilling Permeability Evaluation in Volcanic Reservoirs**
+> **Conditional Cross-Scale Value of Cuttings Thin-Section Images for Wireline-Based Permeability Evaluation in Volcanic Reservoirs**
+
+This repository provides the reference model implementation and a synthetic demonstration. The proprietary well-log and thin-section dataset used for the reported numerical results is not publicly available.
 
 ## Architecture
 
 ```
-LWD Logs (B,L,5) ──► 1D-CNN (3×DSC) ──► Lithology Gating ──► h_log, σ_log ─┐
+Wireline Logs (B,L,5) ──► 1D-CNN (3×DSC) ──► Lithology Gating ──► h_log, σ_log ─┐
                                                                               ├─► IVW Fusion ──► ẑ ──► φ̂ ──► [ẑ; φ̂] ──► μ_K, σ_total
 PPL+XPL (B,64,64,6) ──► 1×1 Conv(6→3) ──► MobileNetV3-Small ──► h_img, σ_img ┘
 ```
@@ -16,7 +18,7 @@ PPL+XPL (B,64,64,6) ──► 1×1 Conv(6→3) ──► MobileNetV3-Small ─�
 - **KC-RANSAC**: Kozeny–Carman-guided asymmetric label filtering (training-time only)
 - **Lithology Gating**: Sigmoid-gated channel modulation on log features (Eq. 4)
 - **IVW Fusion**: Inverse-variance weighting at the feature level (Eq. 5–6)
-- **Cascaded Head**: Physics-causal φ → K prediction pathway (Eq. 7–9)
+- **Cascaded Head**: Porosity-guided φ → K prediction pathway with intermediate supervision (Eq. 7–9)
 - **Heteroscedastic NLL**: Masked Gaussian negative log-likelihood loss (Eq. 11–12)
 
 ## Requirements
@@ -37,7 +39,7 @@ The dataset comprises 1,259 samples from seven wells in the Huoshiling Formation
 |---|---|
 | `Well` | Well identifier (WF1, CS12, CS13, CS601, CS607, CS608, CS606) |
 | `Depth` | Measured depth (m) |
-| `GR, AC, DEN, CNL, RLA5` | Five conventional well-log curves (used as LWD-equivalent inputs) |
+| `GR, AC, DEN, CNL, RLA5` | Five conventional wireline-log curves |
 | `LithProb_*` | Lithology probability vector from pre-trained classifier |
 | `LogK_Core` | Core-measured permeability in log₁₀(mD) |
 | `Porosity_WL` | Well-log interpreted porosity (φ_WL) |
@@ -76,9 +78,9 @@ python train.py
 
 **Note:** Metrics obtained from synthetic data will differ from those reported in the paper, which were obtained using the complete real dataset of 1,259 samples from seven wells in the Huoshiling Formation.
 
-## Training with Real Data
+## Training with an Authorized Real Dataset
 
-To reproduce the paper results, set the data file path in `train.py`:
+If you have authorized access to data in the expected format, set the data file path in `train.py`:
 
 ```python
 DATA_FILE = "your_real_data.xlsx"   # replace with your real data file
@@ -88,12 +90,14 @@ DATA_FILE = "your_real_data.xlsx"   # replace with your real data file
 python train.py
 ```
 
-Results are reported as mean ± std across 5 random seeds with well-level data splitting:
+For the study dataset, the code uses the following fixed well-level split and reports mean ± standard deviation across five random seeds:
 - **Training**: WF1, CS12, CS13, CS601, CS607 (858 samples)
 - **Validation**: CS608 (143 samples)
 - **Blind test**: CS606 (258 samples, fully held out)
 
 Outputs: `results_summary.csv` (per-seed validation and blind metrics) and `results_blind_predictions.csv` (blind-well predictions averaged over the 5 seeds).
+
+The public synthetic demonstration validates execution of the implemented pipeline; it does not reproduce the manuscript's tables, figures, or numerical results without the proprietary study data and the complete analysis workflow.
 
 ## Paper–Code Correspondence
 

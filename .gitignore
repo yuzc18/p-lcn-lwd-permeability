@@ -1,4 +1,21 @@
+# Local environments and Python caches
+.venv/
+venv/
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+
+# Training artifacts and generated evaluation outputs
+outputs/
+*.weights.h5
 results_summary.csv
 results_blind_predictions.csv
+
+# Authorized private inputs must never enter the public demonstration
+data/private/
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+
+# data/synthetic/ intentionally remains versioned.

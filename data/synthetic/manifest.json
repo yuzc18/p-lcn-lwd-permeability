@@ -1,0 +1,44 @@
+{
+  "data_kind": "fully synthetic demonstration; not study measurements",
+  "purpose": "execution and interface validation; not reproduction of manuscript results",
+  "generator_seed": 2025,
+  "n_samples": 210,
+  "n_images": 420,
+  "image_shape": [
+    64,
+    64,
+    3
+  ],
+  "depth_spacing_m": 0.25,
+  "log_window": "5 points, 0.25 m spacing, 1 m between first and last points",
+  "porosity_unit": "fraction",
+  "permeability_target": "log10(K / mD)",
+  "caliper_and_bit_size_unit": "inches",
+  "lithology_probability_class_order": [
+    "Lava",
+    "Breccia",
+    "Tuff"
+  ],
+  "lithology_probability_source": "synthetic Dirichlet draws, not a fitted classifier",
+  "well_counts": {
+    "WF1": 30,
+    "CS12": 25,
+    "CS13": 35,
+    "CS601": 30,
+    "CS607": 25,
+    "CS608": 25,
+    "CS606": 40
+  },
+  "well_roles": {
+    "WF1": "training",
+    "CS12": "training",
+    "CS13": "training",
+    "CS601": "training",
+    "CS607": "training",
+    "CS608": "validation",
+    "CS606": "blind"
+  },
+  "image_notes": "Paired artificial textures share geometry. No field photomicrographs are included.",
+  "csv_sha256": "3092032070cc8992879cc09e990fd73bcc9a521a54f8f7d39bc2d4ef0f1446aa",
+  "ordered_images_sha256": "c96cbeca24b254a63a8dc79467958237e48f3c45ec33f6357e7f2cd261b0f694"
+}
